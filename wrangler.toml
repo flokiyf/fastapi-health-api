@@ -3,3 +3,11 @@ name = "fastapi-health-api"
 main = "src/entry.py"
 compatibility_date = "2026-07-27"
 compatibility_flags = ["python_workers"]
+
+[[durable_objects.bindings]]
+name = "AUDIT_LOG"
+class_name = "AuditLog"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AuditLog"]

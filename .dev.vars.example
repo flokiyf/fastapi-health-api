@@ -1,0 +1,4 @@
+MCP_API_KEY=replace-with-a-long-random-secret
+AUDIT_API_KEY=replace-with-a-different-long-random-secret
+MCP_UPSTREAMS={"apple":{"url":"https://your-remote-apple-mcp.example.com/mcp","token_env":"APPLE_MCP_TOKEN","allowed_tools":["calendar_list_events","calendar_create_event"]}}
+APPLE_MCP_TOKEN=replace-with-the-upstream-token
