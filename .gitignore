@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+
+.venv/
+.tooling/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+node_modules/
+python_modules/
+.wrangler/
+
+.dev.vars
+.env

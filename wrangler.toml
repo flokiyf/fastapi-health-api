@@ -1,0 +1,5 @@
+"$schema" = "./node_modules/wrangler/config-schema.json"
+name = "fastapi-health-api"
+main = "src/entry.py"
+compatibility_date = "2026-07-27"
+compatibility_flags = ["python_workers"]
