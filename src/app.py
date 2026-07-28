@@ -1,11 +1,16 @@
 import hmac
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import timedelta
 from time import perf_counter
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-from fastmcp import Client, FastMCP
-from fastmcp.exceptions import ToolError
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -20,7 +25,7 @@ from audit import (
     sanitize,
     utc_now,
 )
-from runtime import bearer_token, load_upstreams, setting
+from runtime import bearer_token, bind_request, load_upstreams, reset_request, setting
 
 mcp = FastMCP(
     name="AI SafeGuard Gateway",
@@ -30,7 +35,8 @@ mcp = FastMCP(
         "server, tool_name and arguments. Always include the original user request in query and "
         "a conversation or trace identifier in trace when available."
     ),
-    mask_error_details=True,
+    json_response=True,
+    stateless_http=True,
 )
 
 
@@ -64,7 +70,8 @@ def _allowed_tool(config: dict[str, Any], tool_name: str) -> bool:
     return not isinstance(allowed, list) or tool_name in allowed
 
 
-def _client(config: dict[str, Any]) -> Client:
+@asynccontextmanager
+async def _client(config: dict[str, Any]) -> AsyncIterator[ClientSession]:
     token_env = config.get("token_env")
     token = setting(token_env) if isinstance(token_env, str) and token_env else None
     timeout = config.get("timeout_seconds", 30)
@@ -72,7 +79,19 @@ def _client(config: dict[str, Any]) -> Client:
         timeout = max(1, min(int(timeout), 120))
     except (TypeError, ValueError):
         timeout = 30
-    return Client(config["url"], auth=token, timeout=timeout)
+    headers = {"Authorization": f"Bearer {token}"} if token else None
+    async with streamablehttp_client(
+        config["url"],
+        headers=headers,
+        timeout=timeout,
+        sse_read_timeout=timeout,
+    ) as (read_stream, write_stream, _), ClientSession(
+        read_stream,
+        write_stream,
+        read_timeout_seconds=timedelta(seconds=timeout),
+    ) as client:
+        await client.initialize()
+        yield client
 
 
 def _model_dump(value: Any) -> Any:
@@ -101,7 +120,7 @@ async def gateway_operation(
             config = _upstream(name)
             try:
                 async with _client(config) as client:
-                    tools = await client.list_tools()
+                    tools = (await client.list_tools()).tools
             except Exception as exc:
                 discovered[name] = {"ok": False, "error": str(exc)}
                 continue
@@ -168,7 +187,8 @@ async def health(_: Request) -> JSONResponse:
 
 
 def _audit_authorized(request: Request) -> tuple[bool, int]:
-    expected = setting("AUDIT_API_KEY") or setting("MCP_API_KEY")
+    env = request.scope.get("env")
+    expected = setting("AUDIT_API_KEY", env=env) or setting("MCP_API_KEY", env=env)
     if not expected:
         return False, 503
     authorization = request.headers.get("authorization", "")
@@ -193,6 +213,7 @@ async def audit_events(request: Request) -> JSONResponse:
         limit=limit,
         method=request.query_params.get("method"),
         status=request.query_params.get("status"),
+        env=request.scope.get("env"),
     )
     return JSONResponse({"events": events, "count": len(events)})
 
@@ -203,7 +224,7 @@ async def audit_event(request: Request) -> JSONResponse:
     if not authorized:
         return JSONResponse({"detail": "Audit access denied."}, status_code=failure_status)
 
-    event = await get_event(request.path_params["event_id"])
+    event = await get_event(request.path_params["event_id"], env=request.scope.get("env"))
     if event is None:
         return JSONResponse({"detail": "Audit event not found."}, status_code=404)
     return JSONResponse(event)
@@ -291,6 +312,7 @@ class MCPAuditMiddleware:
 
         response_status = 500
         response_body = bytearray()
+        request_tokens = bind_request(scope)
 
         async def audited_send(message: Message) -> None:
             nonlocal response_status
@@ -312,6 +334,8 @@ class MCPAuditMiddleware:
                 env=env,
             )
             raise
+        finally:
+            reset_request(request_tokens)
 
         await finish_event(
             event_id,
@@ -322,5 +346,5 @@ class MCPAuditMiddleware:
         )
 
 
-mcp_http_app = mcp.http_app(path="/mcp", stateless_http=True, json_response=True)
+mcp_http_app = mcp.streamable_http_app()
 app = MCPAuditMiddleware(mcp_http_app)

@@ -5,10 +5,8 @@ description = "Audited FastMCP gateway for Cloudflare Workers"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "fastmcp==2.8.1",
     "mcp==1.12.4",
     "pydantic==2.10.6",
-    "uvicorn>=0.51.0,<1.0",
 ]
 
 [dependency-groups]

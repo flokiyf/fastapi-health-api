@@ -143,10 +143,14 @@ def _normalize_row(row: dict[str, Any]) -> dict[str, Any]:
 
 
 async def list_events(
-    *, limit: int = 50, method: str | None = None, status: str | None = None
+    *,
+    limit: int = 50,
+    method: str | None = None,
+    status: str | None = None,
+    env: Any | None = None,
 ) -> list[dict[str, Any]]:
     bounded_limit = max(1, min(limit, 200))
-    stub = _audit_stub()
+    stub = _audit_stub(env)
     if stub is not None:
         rows = await stub.list_events(bounded_limit, method, status)
         return [_normalize_row(dict(row)) for row in rows]
@@ -159,8 +163,8 @@ async def list_events(
     return [_normalize_row(event) for event in events[:bounded_limit]]
 
 
-async def get_event(event_id: str) -> dict[str, Any] | None:
-    stub = _audit_stub()
+async def get_event(event_id: str, *, env: Any | None = None) -> dict[str, Any] | None:
+    stub = _audit_stub(env)
     if stub is not None:
         row = await stub.get_event(event_id)
         return _normalize_row(dict(row)) if row else None

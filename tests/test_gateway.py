@@ -2,7 +2,6 @@ import asyncio
 from collections.abc import Iterator
 
 import pytest
-from fastmcp import Client
 from starlette.testclient import TestClient
 
 from app import app, gateway_operation, mcp
@@ -28,8 +27,7 @@ def test_health_returns_gateway_metadata(http_client: TestClient) -> None:
 
 def test_exactly_one_mcp_tool_is_exposed() -> None:
     async def inspect_tools() -> list[str]:
-        async with Client(mcp) as client:
-            return [tool.name for tool in await client.list_tools()]
+        return [tool.name for tool in await mcp.list_tools()]
 
     assert asyncio.run(inspect_tools()) == ["ai_gateway"]
 
